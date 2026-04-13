@@ -58,7 +58,7 @@ def validate(model, loader, criterion, device):
             loss = criterion(pred, labels)
 
         sum_loss += loss.item()
-        correct_cnt = (pred.argmax(dim = 1) == labels).sum().item()
+        correct_cnt += (pred.argmax(dim = 1) == labels).sum().item()
         input_size += inputs.shape[0]
         total_batches += 1
 
@@ -66,7 +66,8 @@ def validate(model, loader, criterion, device):
 
 
 def train_cnn(model, optimizer, train_load, val_load, epoch_n=50, scheduler=None, device="cuda"):
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    loss_history = []
     if scheduler is None:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=5
@@ -81,6 +82,7 @@ def train_cnn(model, optimizer, train_load, val_load, epoch_n=50, scheduler=None
         train_loss, train_acc = train_epoch(model, train_load, criterion, optimizer, device)
         val_loss, val_acc = validate(model, val_load, criterion, device)
         scheduler.step(val_loss)
+        loss_history.append(val_loss)
 
         epoch_bar.set_postfix(
             train_loss=f"{train_loss:.4f}",
@@ -101,4 +103,4 @@ def train_cnn(model, optimizer, train_load, val_load, epoch_n=50, scheduler=None
             break
 
     model.load_state_dict(best_state)
-    return model
+    return model, dict(zip(list(range(len(loss_history))), loss_history))
