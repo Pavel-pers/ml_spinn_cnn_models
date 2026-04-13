@@ -66,6 +66,7 @@ def validate(model, loader, criterion, device):
 
 
 def train_cnn(model, optimizer, train_load, val_load, epoch_n=50, scheduler=None, device="cuda"):
+    model.to(device)
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     loss_history = []
     if scheduler is None:
