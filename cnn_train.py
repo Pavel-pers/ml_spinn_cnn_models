@@ -30,6 +30,7 @@ def train_epoch(model, loader, criterion, optimizer, device):
         pred = model(inputs)
         loss = criterion(pred, targets_l) * lm + criterion(pred, targets_ml) * (1 - lm)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         batch_bar.set_postfix(loss=f"{loss.item():.4f}")
@@ -67,7 +68,7 @@ def validate(model, loader, criterion, device):
 
 def train_cnn(model, optimizer, train_load, val_load, epoch_n=50, scheduler=None, device="cuda"):
     model.to(device)
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.0)
     loss_history = []
     if scheduler is None:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

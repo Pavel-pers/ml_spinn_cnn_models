@@ -52,7 +52,7 @@ class USBody(nn.Module, ABC):
 
 
 class USBaseBody(USBody):
-    def __init__(self, inp_channels = 64, channels=None, dropout=0.2):
+    def __init__(self, inp_channels=64, channels=None, dropout=0.2):
         super().__init__(channels)
         if channels is None:
             channels = [128, 256, 512]
@@ -87,7 +87,7 @@ class USBaseBody(USBody):
 
 
 class USVGGBody(USBody):
-    def __init__(self, channels=None, inp_channels = 64, dropout=0.2):
+    def __init__(self, channels=None, inp_channels=64, dropout=0.2):
         super().__init__(channels)
         if channels is None:
             channels = [128, 256, 512]
@@ -168,6 +168,7 @@ class USFCHead(USHead):
     def forward(self, x):
         return self.net(x)
 
+
 class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, stride=1, dropout=0.2):
         super().__init__()
@@ -182,10 +183,11 @@ class ResBlock(nn.Module):
         self.shortcut = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 1, stride=stride),
             nn.BatchNorm2d(out_ch),
-        ) if in_ch != out_ch or stride != 1 else nn.Identity()
+        )
 
     def forward(self, x):
         return F.relu(self.conv(x) + self.shortcut(x))
+
 
 class USResBody(USBody):
     def __init__(self, inp_channels=64, channels=None, dropout=0.2):
@@ -197,6 +199,66 @@ class USResBody(USBody):
         prev_ch = inp_channels
         for ch in channels:
             layers.append(ResBlock(prev_ch, ch, stride=2, dropout=dropout))
+            prev_ch = ch
+
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class USSEBlock(nn.Module):
+    def __init__(self, channels_n, reduction=16):
+        super().__init__()
+        self.net_adaptive = nn.AdaptiveAvgPool2d(1)
+        self.net_main = nn.Sequential(
+            nn.Linear(channels_n, channels_n // reduction, bias=False),
+            nn.ReLU(),
+            nn.Linear(channels_n // reduction, channels_n, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        main_out = self.net_adaptive(x).view(x.shape[0], x.shape[1])
+        main_out = self.net_main(main_out).view(x.shape[0], x.shape[1], 1, 1)
+        return x * main_out
+
+
+class USSEREBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, stride=1, dropout=0.2, reduction=16):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.Dropout2d(dropout),
+        )
+        self.se_conv = USSEBlock(out_ch, reduction)
+        self.shortcut = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 1, stride=stride),
+            nn.BatchNorm2d(out_ch),
+        )
+
+    def forward(self, x):
+        fw_out = self.conv(x)
+        fw_out = self.se_conv(fw_out)
+        shortcut_out = self.shortcut(x)
+
+        return F.relu(fw_out + shortcut_out)
+
+class USSEREBResBody(USBody):
+    def __init__(self, inp_channels=64, channels=None, dropout=0.2):
+        super().__init__(channels)
+        if channels is None:
+            channels = [128, 256, 512]
+
+        layers = []
+        prev_ch = inp_channels
+        for ch in channels:
+            layers.append(USSEREBlock(prev_ch, ch, stride=2, dropout=dropout))
             prev_ch = ch
 
         self.net = nn.Sequential(*layers)
